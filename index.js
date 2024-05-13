@@ -5,7 +5,9 @@ const axios = require('axios');
 const app = express();
 const mongoose = require('mongoose');
 const multer = require('multer');
-const fs = require('fs');
+// const fs = require('fs');
+const fs = require('fs').promises;
+const ExcelJS = require('exceljs');
 const FormData = require('form-data');
 const path = require('path');
 const {contentDisposition} = require("express/lib/utils");
@@ -120,10 +122,110 @@ mongoose.connect('mongodb://localhost/testmongo', {useNewUrlParser: true, useUni
 
 //this section is for our data engineer
 app.get('/generateStats', async (req, res) => {
-
-    res.status(200).send(messages);
+    const user = await userBase.find();
+    let chatEnglishTotal = 0;
+    let aiEnglishTotal = 0;
+    let therapyTotal = 0;
+    let cordrawMessageTotal = 0;
+    let chatterMessageTotal = 0;
+    let outPatientMessageTotal = 0;
+    let totalObject = [];
+    for (let i = 0; i < user.length; i++) {
+        // whisper-2
+        //gpt-3.5-turbo
+        //gpt-4-vision-preview
+        // dall-e-3
+        //gpt-4-0613
+        const chatEnglishObject = await ChatMessages.find({
+            firstUserId: user[i].idChat
+        });
+        chatEnglishTotal = chatEnglishObject.length;
+        const aiEnglishObject = await assistantApEn.find({
+            idChat: user[i].idChat
+        });
+        aiEnglishTotal = aiEnglishObject.length;
+        const therapyObject = await assistantAp.find({
+            idChat: user[i].idChat
+        });
+        therapyTotal = therapyObject.length;
+        const cordraw = await BasicUserMessage.find({
+            idChat: user[i].idChat,
+            aiModel: "dall-e-3"
+        });
+        cordrawMessageTotal = cordraw.length;
+        const chatter = await BasicUserMessage.find({
+            idChat: user[i].idChat,
+            aiModel: "whisper-2" || "gpt-3.5-turbo"
+        });
+        chatterMessageTotal = chatter.length;
+        const outPatient = await BasicUserMessage.find({
+            idChat: user[i].idChat,
+            aiModel: "gpt-4-vision-preview" || "gpt-4-0613"
+        });
+        totalObject[i] = {
+            idChat: user[i].idChat,
+            chatEnglishTotal: chatEnglishTotal,
+            aiEnglishTotal: aiEnglishTotal,
+            therapyTotal: therapyTotal,
+            cordrawMessageTotal: cordrawMessageTotal,
+            chatterMessageTotal: chatterMessageTotal
+        };
+    }
+    res.status(200).send(totalObject);
 });
 
+
+
+app.get('/generateStats2', async (req, res) => {
+    try {
+        // Define the path for the exports directory
+        const exportDir = path.join(__dirname, 'exports');
+
+        // Check if the directory exists, if not create it
+        try {
+            await fs.access(exportDir);
+        } catch (error) {
+            if (error.code === 'ENOENT') {
+                // Create the directory if it does not exist
+                await fs.mkdir(exportDir, { recursive: true });
+            } else {
+                // Rethrow the error if it is not 'ENOENT'
+                throw error;
+            }
+        }
+
+        // Create a new workbook and add a sheet
+        const workbook = new ExcelJS.Workbook();
+        const sheet = workbook.addWorksheet('User Activities');
+
+        // Define columns in the Excel sheet
+        sheet.columns = [
+            { header: 'ID Chat', key: 'idChat', width: 20 },
+            { header: 'Chat English Total', key: 'chatEnglishTotal', width: 20 },
+            { header: 'AI English Total', key: 'aiEnglishTotal', width: 20 },
+            { header: 'Therapy Total', key: 'therapyTotal', width: 20 },
+            { header: 'CoDraw Message Total', key: 'cordrawMessageTotal', width: 25 },
+            { header: 'Chatter Message Total', key: 'chatterMessageTotal', width: 25 },
+            // Add more columns if necessary
+        ];
+
+        // Fetch all users and process data
+        // (Include your data fetching and processing logic here)
+
+        // Save the workbook to the disk
+        const filePath = path.join(exportDir, `UserActivities-${Date.now()}.xlsx`);
+        await workbook.xlsx.writeFile(filePath);
+
+        // Provide download link
+        res.send({
+            message: 'Statistics generated successfully.',
+            downloadLink: `http://${req.headers.host}/download?file=${encodeURIComponent(filePath)}`
+        });
+    } catch (error) {
+        console.error('Failed to generate stats:', error);
+        res.status(500).send('Failed to generate statistics.');
+    }
+});
 
 
 // Start the server
