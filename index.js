@@ -97,6 +97,13 @@ const chatMessagesSchema = new mongoose.Schema({
 });
 
 
+const bonusCheck = new mongoose.Schema({
+    idChat: String,
+    botId: String,
+    date: Date
+});
+
+
 const ChatPartner = mongoose.model('ChatPartner', chatPartnerSchema);
 const ChatMessages = mongoose.model('ChatMessage', chatMessagesSchema);
 const levelOfEnglish = mongoose.model('LevelOfEnglish', levelOfEnglishSchema);
@@ -112,6 +119,10 @@ const inviteGuest = mongoose.model('inviteSchema', inviteSchema);
 const assistantAp = mongoose.model('assistantAp', assistantApi);
 
 const assistantApEn = mongoose.model('assistantApEn', assistantApiEn);
+
+const bonus = mongoose.model('bonusCheck', bonusCheck);
+
+const doubleBonusRequest = mongoose.model('bonusCheck', bonusCheck);
 
 mongoose.connect('mongodb://localhost/testmongo', {useNewUrlParser: true, useUnifiedTopology: true})
     .then(() => console.log('Connected to MongoDB...'))
@@ -174,58 +185,48 @@ app.get('/generateStats', async (req, res) => {
     res.status(200).send(totalObject);
 });
 
+app.get('/checkBonusForEnglish', async (req, res) => {
+    const idChat = req.query.idChat;
+    const chatEnglishObject = await ChatMessages.find({
+        firstUserId: idChat
+    });
+    let chatEnglishTotal = chatEnglishObject.length;
+    const aiEnglishObject = await assistantApEn.find({
+        idChat: idChat
+    });
+    let aiEnglishTotal = aiEnglishObject.length;
 
-
-app.get('/generateStats2', async (req, res) => {
-    try {
-        // Define the path for the exports directory
-        const exportDir = path.join(__dirname, 'exports');
-
-        // Check if the directory exists, if not create it
-        try {
-            await fs.access(exportDir);
-        } catch (error) {
-            if (error.code === 'ENOENT') {
-                // Create the directory if it does not exist
-                await fs.mkdir(exportDir, { recursive: true });
-            } else {
-                // Rethrow the error if it is not 'ENOENT'
-                throw error;
-            }
+    const checker = await bonus.find({
+        idChat: idChat,
+        botId: "talkbetterwithai_bot"
+    });
+    if ((aiEnglishTotal + chatEnglishTotal >= 2)) {
+        if (checker.length === 0) {
+            const newBonus = new bonus({
+                idChat: idChat,
+                botId: "talkbetterwithai_bot",
+                date: Date.now()
+            });
+            await newBonus.save();
+            const userget = await userBase.find({
+                idChat: idChat
+            });
+            let userBonus = userget[0];
+            userBonus.tokenDallE = userBonus.tokenDallE + 1;
+            await userBonus.save();
+            res.status(200).send("you get the bonus");
+        } else {
+            const newBonus = new doubleBonusRequest({
+                idChat: idChat,
+                botId: "talkbetterwithai_bot",
+                date: Date.now()
+            });
+            res.status(400).send("you already got that bonus");
         }
-
-        // Create a new workbook and add a sheet
-        const workbook = new ExcelJS.Workbook();
-        const sheet = workbook.addWorksheet('User Activities');
-
-        // Define columns in the Excel sheet
-        sheet.columns = [
-            { header: 'ID Chat', key: 'idChat', width: 20 },
-            { header: 'Chat English Total', key: 'chatEnglishTotal', width: 20 },
-            { header: 'AI English Total', key: 'aiEnglishTotal', width: 20 },
-            { header: 'Therapy Total', key: 'therapyTotal', width: 20 },
-            { header: 'CoDraw Message Total', key: 'cordrawMessageTotal', width: 25 },
-            { header: 'Chatter Message Total', key: 'chatterMessageTotal', width: 25 },
-            // Add more columns if necessary
-        ];
-
-        // Fetch all users and process data
-        // (Include your data fetching and processing logic here)
-
-        // Save the workbook to the disk
-        const filePath = path.join(exportDir, `UserActivities-${Date.now()}.xlsx`);
-        await workbook.xlsx.writeFile(filePath);
-
-        // Provide download link
-        res.send({
-            message: 'Statistics generated successfully.',
-            downloadLink: `http://${req.headers.host}/download?file=${encodeURIComponent(filePath)}`
-        });
-    } catch (error) {
-        console.error('Failed to generate stats:', error);
-        res.status(500).send('Failed to generate statistics.');
+    } else {
+        res.status(400).send("you don't use enough");
     }
-});
+})
 
 
 // Start the server
